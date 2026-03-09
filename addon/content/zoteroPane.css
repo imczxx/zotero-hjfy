@@ -1,3 +1,21 @@
-.makeItRed {
-  background-color: tomato;
+.hjfy-section-body {
+  padding: 6px 8px;
+}
+
+.hjfy-section-link {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.hjfy-section-empty {
+  color: var(--fill-secondary);
+}
+
+.hjfy-section-link:hover,
+.hjfy-section-link:focus,
+.hjfy-cell-link:hover,
+.hjfy-cell-link:focus,
+[data-hjfy-url]:hover,
+[data-hjfy-url]:focus {
+  color: color-mix(in srgb, var(--accent-blue) 82%, white 18%);
 }
