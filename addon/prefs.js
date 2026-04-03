@@ -1,2 +1,2 @@
-pref("enable", true);
-pref("input", "This is input");
+pref("lookupSimilarityThreshold", 0.88);
+pref("lookupIntervalMs", 3000);

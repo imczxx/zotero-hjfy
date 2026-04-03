@@ -1,4 +1,5 @@
 import { ArxivUIFactory } from "./modules/arxivUI";
+import { registerPrefsScripts } from "./modules/preferenceScript";
 import { initLocale } from "./utils/locale";
 import { createZToolkit } from "./utils/ztoolkit";
 
@@ -80,8 +81,10 @@ async function onNotify(
  * @param data event data
  */
 async function onPrefsEvent(type: string, data: { [key: string]: any }) {
-  void type;
-  void data;
+  if (type !== "load") {
+    return;
+  }
+  await registerPrefsScripts(data.window);
 }
 
 function onShortcuts(type: string) {

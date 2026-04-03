@@ -5,25 +5,33 @@
   onload="Zotero.__addonInstance__.hooks.onPrefsEvent('load', { window })"
 >
   <label><html:h2 data-l10n-id="pref-title"></html:h2></label>
-  <checkbox
-    id="zotero-prefpane-__addonRef__-enable"
-    preference="enable"
-    data-l10n-id="pref-enable"
-  />
-  <hbox>
+  <html:p data-l10n-id="pref-lookup-description"></html:p>
+  <hbox align="center">
     <html:label
-      for="zotero-prefpane-__addonRef__-input"
-      data-l10n-id="pref-input"
+      for="zotero-prefpane-__addonRef__-lookup-similarity-threshold"
+      data-l10n-id="pref-lookup-similarity-threshold"
     ></html:label>
     <html:input
-      type="text"
-      id="zotero-prefpane-__addonRef__-input"
-      preference="input"
+      type="number"
+      step="0.01"
+      min="0"
+      max="1"
+      id="zotero-prefpane-__addonRef__-lookup-similarity-threshold"
     ></html:input>
   </hbox>
-  <hbox class="virtualized-table-container" flex="1" height="300px">
-    <html:div id="__addonRef__-table-container" />
+  <hbox align="center">
+    <html:label
+      for="zotero-prefpane-__addonRef__-lookup-interval-ms"
+      data-l10n-id="pref-lookup-interval-ms"
+    ></html:label>
+    <html:input
+      type="number"
+      step="100"
+      min="0"
+      id="zotero-prefpane-__addonRef__-lookup-interval-ms"
+    ></html:input>
   </hbox>
+  <html:p data-l10n-id="pref-lookup-note"></html:p>
 </groupbox>
 <vbox>
   <html:label

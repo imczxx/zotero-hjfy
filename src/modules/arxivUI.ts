@@ -5,10 +5,17 @@ import {
   getArxivResolution,
   setManualArxivInput,
 } from "./arxiv";
+import {
+  lookupArxivByTitle,
+  sanitizeLookupIntervalMs,
+  sanitizeLookupSimilarityThreshold,
+} from "./arxivLookup";
 import { getLocaleID, getString } from "../utils/locale";
+import { getPref } from "../utils/prefs";
 
 const STYLE_ID = `${config.addonRef}-hjfy-style`;
 const MENU_ITEM_ID = "zotero-itemmenu-hjfy-open";
+const MENU_ITEM_LOOKUP_ID = "zotero-itemmenu-hjfy-lookup";
 const INFO_ROW_ARXIV_ID = "hjfy-arxiv-id";
 const SECTION_HJFY_URL_ID = "hjfy-url-section";
 const SECTION_BUTTON_OPEN_HJFY = "open-hjfy";
@@ -20,6 +27,7 @@ const SECTION_LINK_CLASS = "hjfy-section-link";
 const SECTION_EMPTY_CLASS = "hjfy-section-empty";
 const SECTION_ICON = `chrome://${config.addonRef}/content/icons/favicon@0.5x.png`;
 const WINDOW_HOOKED = new WeakSet<Window>();
+let lookupRunning = false;
 
 function isRegularItem(
   item: Zotero.Item | undefined | null,
@@ -114,6 +122,20 @@ function openItemsInHjfy(items: Zotero.Item[]): void {
   );
 }
 
+function getLookupTitle(item: Zotero.Item): string {
+  const title = item.getField("title");
+  return typeof title === "string" ? title.trim() : String(title || "").trim();
+}
+
+function getPendingLookupItems(items: Zotero.Item[]): Zotero.Item[] {
+  return items.filter((item) => {
+    if (getArxivResolution(item).resolved) {
+      return false;
+    }
+    return Boolean(getLookupTitle(item));
+  });
+}
+
 function refreshItemPane(): void {
   for (const win of Zotero.getMainWindows()) {
     try {
@@ -130,10 +152,16 @@ function refreshDerivedUI(): void {
   refreshItemPane();
 }
 
-function persistManualArxivInput(item: Zotero.Item, value: string): void {
+async function saveManualArxivInput(
+  item: Zotero.Item,
+  value: string,
+): Promise<void> {
   setManualArxivInput(item, value);
-  void item
-    .saveTx()
+  await item.saveTx();
+}
+
+function persistManualArxivInput(item: Zotero.Item, value: string): void {
+  void saveManualArxivInput(item, value)
     .then(() => {
       refreshDerivedUI();
     })
@@ -141,6 +169,91 @@ function persistManualArxivInput(item: Zotero.Item, value: string): void {
       Zotero.logError(error);
       showMessage(getString("arxiv-save-failed"));
     });
+}
+
+function getLookupSimilarityThreshold(): number {
+  return sanitizeLookupSimilarityThreshold(getPref("lookupSimilarityThreshold"));
+}
+
+function getLookupIntervalMs(): number {
+  return sanitizeLookupIntervalMs(getPref("lookupIntervalMs"));
+}
+
+function waitFor(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+async function lookupItemsByTitle(items: Zotero.Item[]): Promise<void> {
+  if (lookupRunning) {
+    showMessage(getString("arxiv-lookup-running"));
+    return;
+  }
+
+  const pendingItems = getPendingLookupItems(items);
+  if (pendingItems.length === 0) {
+    showMessage(getString("arxiv-lookup-no-pending"));
+    return;
+  }
+
+  lookupRunning = true;
+  const threshold = getLookupSimilarityThreshold();
+  const intervalMs = getLookupIntervalMs();
+  const skipped = items.length - pendingItems.length;
+  let matched = 0;
+  let unmatched = 0;
+  let failed = 0;
+  let lastLookupAt = 0;
+
+  showMessage(
+    getString("arxiv-lookup-started", {
+      args: { count: pendingItems.length },
+    }),
+  );
+
+  try {
+    for (const item of pendingItems) {
+      const waitMs = intervalMs - (Date.now() - lastLookupAt);
+      if (lastLookupAt > 0 && waitMs > 0) {
+        await waitFor(waitMs);
+      }
+      lastLookupAt = Date.now();
+
+      try {
+        const result = await lookupArxivByTitle(getLookupTitle(item), {
+          threshold,
+        });
+        if (!result.matched) {
+          unmatched += 1;
+          continue;
+        }
+        await saveManualArxivInput(item, result.matched.id);
+        matched += 1;
+      } catch (error) {
+        Zotero.logError(error as Error);
+        failed += 1;
+      }
+    }
+  } finally {
+    lookupRunning = false;
+  }
+
+  if (matched > 0) {
+    refreshDerivedUI();
+  }
+
+  showMessage(
+    getString("arxiv-lookup-summary", {
+      args: {
+        matched,
+        skipped,
+        unmatched,
+        failed,
+      },
+    }),
+    failed === 0 && matched > 0 ? "success" : "default",
+  );
 }
 
 function renderHjfySectionBody(body: HTMLDivElement, url: string): void {
@@ -313,7 +426,7 @@ export class ArxivUIFactory {
     WINDOW_HOOKED.add(win);
 
     this.registerStyleSheet(win);
-    this.registerRightClickMenuItem();
+    this.registerRightClickMenuItems();
   }
 
   static unregisterMainWindow(win: Window) {
@@ -337,7 +450,7 @@ export class ArxivUIFactory {
     doc.documentElement?.appendChild(style);
   }
 
-  static registerRightClickMenuItem() {
+  static registerRightClickMenuItems() {
     const menuIcon = `chrome://${config.addonRef}/content/icons/favicon@0.5x.png`;
     ztoolkit.Menu.register("item", {
       tag: "menuitem",
@@ -345,6 +458,15 @@ export class ArxivUIFactory {
       label: getString("arxiv-menu-open-hjfy"),
       commandListener: () => {
         openItemsInHjfy(getSelectedRegularItems());
+      },
+      icon: menuIcon,
+    });
+    ztoolkit.Menu.register("item", {
+      tag: "menuitem",
+      id: MENU_ITEM_LOOKUP_ID,
+      label: getString("arxiv-menu-lookup-by-title"),
+      commandListener: () => {
+        void lookupItemsByTitle(getSelectedRegularItems());
       },
       icon: menuIcon,
     });
